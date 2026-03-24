@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="EV Calc"/>
+<meta name="theme-color" content="#020817"/>
+<title>OpenClaw — EV Calculator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#020817;color:#e2e8f0;font-family:'Courier New',monospace;min-height:100vh;padding:max(env(safe-area-inset-top),20px) 14px env(safe-area-inset-bottom,20px)}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:#1e293b;outline:none;width:100%}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;cursor:pointer}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.card{background:#0a1628;border:1px solid #1e293b;border-radius:12px;padding:16px;margin-bottom:10px}
+.label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.12em;display:block;margin-bottom:5px}
+.fw{position:relative}
+.fw input{width:100%;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:10px 36px 10px 12px;color:#e2e8f0;font-size:14px;font-family:'Courier New',monospace;outline:none;transition:border-color .2s}
+.fw input:focus{border-color:#3b82f6}
+.fw .sfx{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#475569;font-size:12px;pointer-events:none}
+.hint{font-size:10px;color:#475569;margin-top:3px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.sbox{background:#0f172a;border-radius:10px;padding:11px 14px}
+.sbox .sl{font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.sbox .sv{font-size:16px;font-weight:700;font-family:'Courier New',monospace}
+.btn{cursor:pointer;font-family:'Courier New',monospace;border:none;outline:none}
+.tab-btn{flex-shrink:0;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px 12px;cursor:pointer;font-family:'Courier New',monospace;transition:all .15s;text-align:left;position:relative}
+.guide-row{display:flex;gap:10px;font-size:11px;padding:6px 0;border-bottom:1px solid #0f172a}
+
+/* MODAL */
+#modal-overlay{display:none;position:fixed;inset:0;background:#00000088;z-index:100;align-items:flex-end;justify-content:center}
+#modal-overlay.open{display:flex}
+#modal-box{background:#0a1628;border:1px solid #1e293b;border-radius:20px 20px 0 0;width:100%;max-width:520px;padding:24px 20px 40px;animation:slideDown .25s ease}
+.modal-input{width:100%;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px 14px;color:#e2e8f0;font-size:15px;font-family:'Courier New',monospace;outline:none;text-transform:uppercase;transition:border-color .2s}
+.modal-input:focus{border-color:#3b82f6}
+.color-dot{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s;flex-shrink:0}
+.color-dot.selected{border-color:#fff;transform:scale(1.15)}
+</style>
+</head>
+<body>
+<div style="max-width:520px;margin:0 auto" id="app">
+
+  <!-- HEADER -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+        <div id="dot" style="width:8px;height:8px;border-radius:50%;background:#334155;box-shadow:0 0 8px #334155;animation:blink 2s infinite"></div>
+        <span style="font-size:10px;color:#475569;letter-spacing:.15em">OPENCLAW — EV CALCULATOR</span>
+      </div>
+      <div id="stxt" style="font-size:10px;color:#334155">Đang kết nối Binance...</div>
+    </div>
+    <button class="btn" onclick="reconnectWS()" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:7px 14px;color:#64748b;font-size:11px">↻ Reconnect</button>
+  </div>
+
+  <!-- TABS ROW -->
+  <div style="display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px;align-items:stretch" id="tabs">
+    <!-- built dynamically -->
+    <button class="btn" onclick="openModal()" id="add-btn" style="flex-shrink:0;background:#0f172a;border:2px dashed #1e293b;border-radius:10px;padding:8px 14px;color:#475569;font-size:18px;cursor:pointer;transition:all .15s;min-width:46px;display:flex;align-items:center;justify-content:center">+</button>
+  </div>
+
+  <!-- LIVE BANNER -->
+  <div id="banner" style="background:#0a0f1e;border:1px solid #1e293b;border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;min-height:72px">
+    <div>
+      <div style="font-size:10px;color:#475569;letter-spacing:.1em;margin-bottom:4px" id="banner-label">—</div>
+      <div style="font-size:28px;font-weight:700;color:#334155" id="banner-price">Đang kết nối...</div>
+    </div>
+    <div style="text-align:right">
+      <div id="banner-diff" style="font-size:12px;margin-bottom:8px"></div>
+      <button id="use-btn" class="btn" onclick="usePrice()" style="display:none;border-radius:6px;padding:5px 10px;font-size:10px">← Dùng giá này</button>
+    </div>
+  </div>
+
+  <!-- PRICE LEVELS -->
+  <div class="card">
+    <span class="label" id="plabel">PRICE LEVELS</span>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <span class="label">Entry Price</span>
+        <div class="fw"><input type="number" id="entry" step="any" placeholder="0.00" oninput="calc()"><span class="sfx">$</span></div>
+        <div class="hint" id="ehint">Nhập giá vào lệnh</div>
+      </div>
+      <div>
+        <span class="label">Take Profit (TP)</span>
+        <div class="fw"><input type="number" id="tp" step="any" placeholder="0.00" oninput="calc()"><span class="sfx">$</span></div>
+      </div>
+      <div>
+        <span class="label">Stop Loss (SL)</span>
+        <div class="fw"><input type="number" id="sl" step="any" placeholder="0.00" oninput="calc()"><span class="sfx">$</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRADE PARAMS -->
+  <div class="card">
+    <span class="label" style="color:#8b5cf6">TRADE PARAMS</span>
+    <div class="grid2" style="margin-bottom:14px">
+      <div>
+        <span class="label">Win Rate</span>
+        <div class="fw"><input type="number" id="wr" value="60" min="1" max="99" step="1" oninput="calc()"><span class="sfx">%</span></div>
+        <div class="hint">Từ backtest</div>
+      </div>
+      <div>
+        <span class="label">Capital</span>
+        <div class="fw"><input type="number" id="cap" value="1000" step="1" oninput="calc()"><span class="sfx">$</span></div>
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span class="label" style="margin-bottom:0">Leverage: <span id="lv-val" style="color:#22c55e;font-weight:700;font-size:15px">10x</span></span>
+        <span id="lv-w1" style="font-size:10px;color:#ef4444;display:none;animation:blink 1s infinite">🚨 MAX 75x!</span>
+        <span id="lv-w2" style="font-size:10px;color:#f97316;display:none">⚠️ High risk</span>
+      </div>
+      <input type="range" id="lev" min="1" max="75" value="10" oninput="levChange(this.value)">
+      <div style="display:flex;justify-content:space-between;font-size:9px;margin-top:3px">
+        <span style="color:#64748b">1x</span><span style="color:#22c55e">10x</span><span style="color:#f59e0b">20x</span><span style="color:#f97316">50x</span><span style="color:#ef4444">75x</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap" id="lev-btns"></div>
+    </div>
+  </div>
+
+  <!-- RR ROW -->
+  <div class="grid3" style="margin-bottom:10px">
+    <div class="sbox" style="border:1px solid #22c55e22"><div class="sl">TP %</div><div class="sv" id="r-tp" style="color:#475569">—</div></div>
+    <div class="sbox" style="border:1px solid #ef444422"><div class="sl">SL %</div><div class="sv" id="r-sl" style="color:#ef4444">—</div></div>
+    <div class="sbox" style="border:1px solid #47556922"><div class="sl">R/R</div><div class="sv" id="r-rr" style="color:#475569">—</div></div>
+  </div>
+
+  <!-- EV HERO -->
+  <div id="ev-box" style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:18px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+    <div style="flex-shrink:0">
+      <svg width="140" height="90" viewBox="0 0 140 90">
+        <path id="g-bg" d="" fill="none" stroke="#1e293b" stroke-width="10" stroke-linecap="round"/>
+        <path id="g-fill" d="" fill="none" stroke="#334155" stroke-width="10" stroke-linecap="round"/>
+        <line id="g-needle" x1="70" y1="70" x2="70" y2="20" stroke="#334155" stroke-width="2.5" stroke-linecap="round"/>
+        <circle id="g-dot" cx="70" cy="70" r="4" fill="#334155"/>
+      </svg>
+      <div style="text-align:center;margin-top:-8px;font-size:10px;color:#475569">EV GAUGE</div>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:10px;color:#475569;letter-spacing:.12em;margin-bottom:4px">EXPECTED VALUE</div>
+      <div id="ev-num" style="font-size:38px;font-weight:700;letter-spacing:-.03em;color:#334155">—</div>
+      <div id="v-label" style="font-size:13px;font-weight:600;margin-top:6px"></div>
+      <div id="v-sub"   style="font-size:11px;color:#64748b;margin-top:2px"></div>
+    </div>
+  </div>
+
+  <!-- KELLY -->
+  <div class="card">
+    <span class="label" style="color:#f59e0b;margin-bottom:12px;display:block">KELLY + POSITION SIZE</span>
+    <div class="grid2" style="margin-bottom:10px">
+      <div class="sbox" style="border:1px solid #94a3b822"><div class="sl">Full Kelly</div><div class="sv" id="k-f" style="color:#94a3b8">—</div></div>
+      <div class="sbox" style="border:1px solid #f59e0b22"><div class="sl">Quarter Kelly</div><div class="sv" id="k-q" style="color:#f59e0b">—</div></div>
+      <div class="sbox" style="border:1px solid #f59e0b22"><div class="sl">Position ($)</div><div class="sv" id="k-p" style="color:#f59e0b">—</div></div>
+      <div class="sbox" id="k-lb" style="border:1px solid #fbbf2422"><div class="sl" id="k-ll">With 10x</div><div class="sv" id="k-l" style="color:#fbbf24">—</div></div>
+    </div>
+    <div class="grid2">
+      <div style="background:#22c55e0d;border:1px solid #22c55e22;border-radius:8px;padding:10px 14px">
+        <div style="font-size:10px;color:#475569">MAX PROFIT</div>
+        <div id="k-pp" style="font-size:16px;color:#22c55e;margin-top:3px;font-family:'Courier New',monospace">—</div>
+      </div>
+      <div style="background:#ef44440d;border:1px solid #ef444422;border-radius:8px;padding:10px 14px">
+        <div style="font-size:10px;color:#475569">MAX LOSS</div>
+        <div id="k-pm" style="font-size:16px;color:#ef4444;margin-top:3px;font-family:'Courier New',monospace">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUIDE -->
+  <button onclick="toggleGuide()" id="gbtn" class="btn" style="width:100%;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:12px 16px;color:#64748b;font-size:12px;display:flex;justify-content:space-between;align-items:center">
+    <span>📐 HƯỚNG DẪN CÁCH TÍNH EV</span>
+    <span id="garrow" style="font-size:16px;transition:transform .2s">›</span>
+  </button>
+  <div id="gbody" style="display:none;background:#0a1628;border:1px solid #1e293b;border-top:none;border-radius:0 0 12px 12px;padding:18px;margin-bottom:10px">
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;color:#3b82f6;margin-bottom:8px;letter-spacing:.1em">① CÔNG THỨC EV</div>
+      <div style="background:#020817;border-radius:8px;padding:12px 14px;font-size:12px;color:#94a3b8;line-height:2;border-left:3px solid #3b82f6">
+        <div><span style="color:#f1f5f9">EV = (Win% × TP%) − (Loss% × SL%)</span></div>
+        <div style="color:#475569">Win%  = xác suất thắng (từ backtest)</div>
+        <div style="color:#475569">TP%   = % lợi nhuận khi đúng</div>
+        <div style="color:#475569">Loss% = 1 − Win%</div>
+        <div style="color:#475569">SL%   = % thua lỗ khi sai</div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;background:#0f172a;padding:8px 12px;border-radius:6px;color:#64748b">
+        Ví dụ: EV = (0.65×5.3) − (0.35×7.8) = <span style="color:#22c55e">+0.72% ✅</span>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;color:#f59e0b;margin-bottom:8px;letter-spacing:.1em">② KELLY CRITERION</div>
+      <div style="background:#020817;border-radius:8px;padding:12px 14px;font-size:12px;color:#94a3b8;line-height:2;border-left:3px solid #f59e0b">
+        <div><span style="color:#f1f5f9">Kelly = (p × b − q) / b</span></div>
+        <div style="color:#475569">b = TP%/SL%, p = Win Rate, q = 1−p</div>
+        <div style="color:#fbbf24">Quarter Kelly = Full Kelly × 0.25</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:#22c55e;margin-bottom:8px;letter-spacing:.1em">③ QUY TẮC QUYẾT ĐỊNH</div>
+      <div class="guide-row"><span style="color:#22c55e;min-width:90px">EV &gt; 10%</span><span style="color:#334155">→</span><span style="color:#94a3b8">Full Quarter Kelly 🔥</span></div>
+      <div class="guide-row"><span style="color:#86efac;min-width:90px">EV 5~10%</span><span style="color:#334155">→</span><span style="color:#94a3b8">Quarter Kelly ✅</span></div>
+      <div class="guide-row"><span style="color:#f59e0b;min-width:90px">EV 0~5%</span><span style="color:#334155">→</span><span style="color:#94a3b8">Half Quarter Kelly 🟡</span></div>
+      <div class="guide-row" style="border:none"><span style="color:#ef4444;min-width:90px">EV &lt; 0%</span><span style="color:#334155">→</span><span style="color:#94a3b8">KHÔNG VÀO ❌</span></div>
+      <div style="background:#0f172a;border-radius:8px;padding:8px 12px;font-size:11px;color:#475569;border-left:3px solid #334155;margin-top:10px">
+        💡 Counter-trend → nhân size ×0.5
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;font-size:9px;color:#1e293b;margin-top:18px;padding-bottom:20px">
+    OPENCLAW × BOBBY © 2026 · BINANCE WEBSOCKET · NOT FINANCIAL ADVICE
+  </div>
+</div>
+
+<!-- ADD TOKEN MODAL -->
+<div id="modal-overlay" onclick="closeModalOutside(event)">
+  <div id="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#f1f5f9">➕ Add Token</div>
+        <div style="font-size:11px;color:#475569;margin-top:2px">Binance Futures (USDT pair)</div>
+      </div>
+      <button class="btn" onclick="closeModal()" style="background:#1e293b;border:none;border-radius:8px;padding:6px 12px;color:#94a3b8;font-size:13px">✕</button>
+    </div>
+
+    <!-- Symbol input -->
+    <div style="margin-bottom:16px">
+      <span class="label">Symbol (ví dụ: BTC, ETH, SOL)</span>
+      <input type="text" id="m-sym" class="modal-input" placeholder="BTC" maxlength="12"
+        oninput="this.value=this.value.toUpperCase();checkSymbol()"
+        style="letter-spacing:.1em;font-size:16px">
+      <div id="m-hint" style="font-size:11px;margin-top:6px;color:#475569">Nhập symbol → tự động kiểm tra trên Binance</div>
+    </div>
+
+    <!-- Color picker -->
+    <div style="margin-bottom:20px">
+      <span class="label">Màu tab</span>
+      <div style="display:flex;gap:10px;flex-wrap:wrap" id="color-picker"></div>
+    </div>
+
+    <!-- Preview -->
+    <div id="m-preview" style="display:none;background:#0f172a;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+      <div style="font-size:10px;color:#475569;margin-bottom:6px">PREVIEW</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="prev-dot" style="width:10px;height:10px;border-radius:50%"></div>
+        <span id="prev-sym" style="font-size:14px;font-weight:700"></span>
+        <span id="prev-price" style="font-size:13px;color:#64748b"></span>
+        <span id="prev-ok" style="font-size:11px;margin-left:auto"></span>
+      </div>
+    </div>
+
+    <button id="m-add-btn" class="btn" onclick="addToken()" style="width:100%;background:#1e293b;border:none;border-radius:10px;padding:14px;color:#475569;font-size:14px;font-weight:700;transition:all .2s" disabled>
+      Thêm Token
+    </button>
+  </div>
+</div>
+
+<script>
+// ── DEFAULT TOKENS ───────────────────────────────────────────
+let TOKENS = [
+  { id:"WLD",   stream:"wldusdt",   pair:"WLDUSDT",   label:"WLD",   color:"#6366f1" },
+  { id:"TAO",   stream:"taousdt",   pair:"TAOUSDT",   label:"TAO",   color:"#f59e0b" },
+  { id:"ENS",   stream:"ensusdt",   pair:"ENSUSDT",   label:"ENS",   color:"#22c55e" },
+  { id:"LINEA", stream:"lineausdt", pair:"LINEAUSDT", label:"LINEA", color:"#3b82f6" },
+  { id:"XRP",   stream:"xrpusdt",   pair:"XRPUSDT",   label:"XRP",   color:"#06b6d4" },
+];
+
+const COLORS = ["#6366f1","#f59e0b","#22c55e","#3b82f6","#06b6d4","#ec4899","#a855f7","#ef4444","#14b8a6","#f97316","#84cc16","#e879f9"];
+const LEV_PRESETS = [3,5,10,20,50,75];
+const VERDICTS = [
+  {thr:10, label:"🔥 STRONG SIGNAL", sub:"Vào full Quarter Kelly",  col:"#22c55e"},
+  {thr:5,  label:"✅ TÍN HIỆU TỐT",  sub:"Vào Quarter Kelly",       col:"#86efac"},
+  {thr:0,  label:"🟡 BIÊN THẤP",     sub:"Size nhỏ hoặc bỏ qua",   col:"#f59e0b"},
+  {thr:-999,label:"❌ KHÔNG VÀO",    sub:"EV âm — skip trade",      col:"#ef4444"},
+];
+
+let activeTab = "WLD";
+let prices    = {};
+let forms     = {};
+let ws        = null;
+let wsTimer   = null;
+let guideOpen = false;
+let selColor  = COLORS[0];
+let checkTimer= null;
+
+TOKENS.forEach(t => forms[t.id] = {entry:"",tp:"",sl:"",wr:60,cap:1000,lev:10});
+
+// ── HELPERS ──────────────────────────────────────────────────
+const fmt = p => {
+  if (!p||isNaN(p)) return "—";
+  if (p>=1000) return p.toFixed(2);
+  if (p>=10)   return p.toFixed(3);
+  if (p>=1)    return p.toFixed(4);
+  return p.toFixed(5);
+};
+const fPct = v => isNaN(v)?"—":((v>0?"+":"")+v.toFixed(2)+"%");
+const fUSD = v => (isNaN(v)||v<=0)?"—":"$"+v.toFixed(2);
+const tok  = () => TOKENS.find(t=>t.id===activeTab) || TOKENS[0];
+
+// ── BUILD TABS ───────────────────────────────────────────────
+function buildTabs() {
+  // remove all tab buttons (keep add-btn)
+  document.querySelectorAll(".tab-btn").forEach(b=>b.remove());
+  const container = document.getElementById("tabs");
+  const addBtn    = document.getElementById("add-btn");
+
+  TOKENS.forEach(t => {
+    const btn = document.createElement("button");
+    btn.className = "tab-btn";
+    btn.id = "tab-"+t.id;
+    btn.innerHTML = `
+      <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
+        <div style="font-size:12px;font-weight:700;color:#64748b" id="tl-${t.id}">${t.label}</div>
+        ${TOKENS.length > 1 ? `<span onclick="removeToken(event,'${t.id}')" style="font-size:9px;color:#334155;padding:1px 4px;border-radius:4px;background:#1e293b;margin-left:auto;line-height:1.4">✕</span>` : ""}
+      </div>
+      <div style="font-size:10px;color:#334155" id="tp-${t.id}">—</div>
+    `;
+    btn.onclick = (e) => { if(e.target.tagName!=="SPAN") switchTab(t.id); };
+    container.insertBefore(btn, addBtn);
+  });
+  updateTabStyles();
+}
+
+function updateTabStyles() {
+  TOKENS.forEach(t => {
+    const btn = document.getElementById("tab-"+t.id);
+    const tl  = document.getElementById("tl-"+t.id);
+    if (!btn||!tl) return;
+    const act = t.id===activeTab;
+    btn.style.background = act ? t.color+"18" : "#0f172a";
+    btn.style.border     = `1px solid ${act ? t.color : "#1e293b"}`;
+    btn.style.boxShadow  = act ? `0 0 14px ${t.color}33` : "none";
+    tl.style.color       = act ? t.color : "#64748b";
+  });
+}
+
+// ── SWITCH TAB ───────────────────────────────────────────────
+function switchTab(id) {
+  saveForm();
+  activeTab = id;
+  loadForm();
+  updateTabStyles();
+  updateBanner();
+  calc();
+  document.getElementById("plabel").textContent = "PRICE LEVELS — "+id;
+}
+
+function saveForm() {
+  const f = forms[activeTab] || {};
+  f.entry = document.getElementById("entry").value;
+  f.tp    = document.getElementById("tp").value;
+  f.sl    = document.getElementById("sl").value;
+  f.wr    = parseFloat(document.getElementById("wr").value)||60;
+  f.cap   = parseFloat(document.getElementById("cap").value)||1000;
+  f.lev   = parseInt(document.getElementById("lev").value)||10;
+  forms[activeTab] = f;
+}
+
+function loadForm() {
+  const f = forms[activeTab] || {entry:"",tp:"",sl:"",wr:60,cap:1000,lev:10};
+  document.getElementById("entry").value = f.entry;
+  document.getElementById("tp").value    = f.tp;
+  document.getElementById("sl").value    = f.sl;
+  document.getElementById("wr").value    = f.wr;
+  document.getElementById("cap").value   = f.cap;
+  document.getElementById("lev").value   = f.lev;
+  levChange(f.lev, true);
+}
+
+// ── REMOVE TOKEN ─────────────────────────────────────────────
+function removeToken(e, id) {
+  e.stopPropagation();
+  if (TOKENS.length <= 1) return;
+  TOKENS = TOKENS.filter(t=>t.id!==id);
+  delete forms[id];
+  delete prices[id];
+  if (activeTab===id) activeTab = TOKENS[0].id;
+  buildTabs();
+  switchTab(activeTab);
+  reconnectWS(); // reconnect with new stream list
+}
+
+// ── ADD TOKEN MODAL ──────────────────────────────────────────
+function openModal() {
+  document.getElementById("modal-overlay").classList.add("open");
+  document.getElementById("m-sym").value = "";
+  document.getElementById("m-hint").textContent = "Nhập symbol → tự động kiểm tra trên Binance";
+  document.getElementById("m-hint").style.color = "#475569";
+  document.getElementById("m-preview").style.display = "none";
+  document.getElementById("m-add-btn").disabled = true;
+  document.getElementById("m-add-btn").style.background = "#1e293b";
+  document.getElementById("m-add-btn").style.color = "#475569";
+  buildColorPicker();
+  setTimeout(()=>document.getElementById("m-sym").focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+}
+
+function closeModalOutside(e) {
+  if (e.target===document.getElementById("modal-overlay")) closeModal();
+}
+
+function buildColorPicker() {
+  const el = document.getElementById("color-picker");
+  el.innerHTML = "";
+  // auto-pick unused color
+  const used = TOKENS.map(t=>t.color);
+  selColor = COLORS.find(c=>!used.includes(c)) || COLORS[0];
+  COLORS.forEach(c => {
+    const d = document.createElement("div");
+    d.className = "color-dot"+(c===selColor?" selected":"");
+    d.style.background = c;
+    d.style.boxShadow  = c===selColor?`0 0 8px ${c}88`:"none";
+    d.onclick = () => {
+      selColor = c;
+      document.querySelectorAll(".color-dot").forEach(x=>{
+        x.classList.remove("selected");
+        x.style.boxShadow="none";
+      });
+      d.classList.add("selected");
+      d.style.boxShadow=`0 0 8px ${c}88`;
+      updatePreview();
+    };
+    el.appendChild(d);
+  });
+}
+
+let lastChecked = "";
+let lastValid   = false;
+
+function checkSymbol() {
+  clearTimeout(checkTimer);
+  const sym = document.getElementById("m-sym").value.trim().toUpperCase();
+  if (!sym || sym===lastChecked) return;
+  document.getElementById("m-hint").textContent = "Đang kiểm tra...";
+  document.getElementById("m-hint").style.color = "#f59e0b";
+  document.getElementById("m-preview").style.display = "none";
+  document.getElementById("m-add-btn").disabled = true;
+  document.getElementById("m-add-btn").style.background = "#1e293b";
+  document.getElementById("m-add-btn").style.color = "#475569";
+  checkTimer = setTimeout(()=>doCheck(sym), 600);
+}
+
+async function doCheck(sym) {
+  lastChecked = sym;
+  const pair  = sym+"USDT";
+  // Check if already added
+  if (TOKENS.find(t=>t.id===sym)) {
+    document.getElementById("m-hint").textContent = "⚠️ Token này đã có rồi!";
+    document.getElementById("m-hint").style.color = "#f59e0b";
+    lastValid = false; return;
+  }
+  try {
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`, {signal:AbortSignal.timeout(5000)});
+    const data = await res.json();
+    if (data.price) {
+      const price = parseFloat(data.price);
+      prices[sym] = price;
+      lastValid = true;
+      document.getElementById("m-hint").textContent = "✓ Tìm thấy trên Binance!";
+      document.getElementById("m-hint").style.color = "#22c55e";
+      document.getElementById("m-preview").style.display = "block";
+      document.getElementById("prev-sym").textContent   = sym;
+      document.getElementById("prev-sym").style.color   = selColor;
+      document.getElementById("prev-dot").style.background = selColor;
+      document.getElementById("prev-price").textContent = "$"+fmt(price);
+      document.getElementById("prev-ok").textContent    = "✓ Giá live";
+      document.getElementById("prev-ok").style.color    = "#22c55e";
+      document.getElementById("m-add-btn").disabled     = false;
+      document.getElementById("m-add-btn").style.background = selColor+"33";
+      document.getElementById("m-add-btn").style.color  = selColor;
+    } else {
+      lastValid = false;
+      document.getElementById("m-hint").textContent = "✗ Không tìm thấy — thử lại (ví dụ: BTC, ETH, SOL)";
+      document.getElementById("m-hint").style.color = "#ef4444";
+    }
+  } catch {
+    lastValid = false;
+    document.getElementById("m-hint").textContent = "✗ Lỗi kết nối — thử lại";
+    document.getElementById("m-hint").style.color = "#ef4444";
+  }
+}
+
+function updatePreview() {
+  if (!lastValid) return;
+  const sym = document.getElementById("m-sym").value.trim().toUpperCase();
+  document.getElementById("prev-sym").style.color = selColor;
+  document.getElementById("prev-dot").style.background = selColor;
+  document.getElementById("m-add-btn").style.background = selColor+"33";
+  document.getElementById("m-add-btn").style.color = selColor;
+}
+
+function addToken() {
+  if (!lastValid) return;
+  const sym   = document.getElementById("m-sym").value.trim().toUpperCase();
+  const pair  = sym+"USDT";
+  const stream= sym.toLowerCase()+"usdt";
+  const newTok = { id:sym, stream, pair, label:sym, color:selColor };
+  TOKENS.push(newTok);
+  forms[sym] = {entry:"",tp:"",sl:"",wr:60,cap:1000,lev:10};
+  closeModal();
+  buildTabs();
+  switchTab(sym);
+  reconnectWS();
+}
+
+// ── LEVERAGE ────────────────────────────────────────────────
+function buildLevBtns() {
+  const el = document.getElementById("lev-btns");
+  el.innerHTML="";
+  LEV_PRESETS.forEach(x=>{
+    const b=document.createElement("button");
+    b.className="btn"; b.id="lb-"+x; b.textContent=x+"x";
+    b.style.cssText="background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:5px 10px;color:#475569;font-size:11px;transition:all .15s";
+    b.onclick=()=>{ document.getElementById("lev").value=x; levChange(x); };
+    el.appendChild(b);
+  });
+}
+
+function levChange(val, silent) {
+  val = parseInt(val);
+  const t = tok();
+  const el = document.getElementById("lv-val");
+  el.textContent = val+"x";
+  el.style.color = val>=75?"#ef4444":val>20?"#f97316":val>10?"#f59e0b":"#22c55e";
+  document.getElementById("lv-w1").style.display = val>=75?"inline":"none";
+  document.getElementById("lv-w2").style.display = (val>20&&val<75)?"inline":"none";
+  document.getElementById("lev").style.accentColor = val>=75?"#ef4444":val>20?"#f97316":t.color;
+  LEV_PRESETS.forEach(x=>{
+    const b=document.getElementById("lb-"+x); if(!b) return;
+    b.style.background = x===val?t.color+"22":"#0f172a";
+    b.style.borderColor= x===val?t.color:"#1e293b";
+    b.style.color      = x===val?t.color:"#475569";
+  });
+  document.getElementById("k-ll").textContent = "With "+val+"x";
+  document.getElementById("k-l").style.color  = val>20?"#ef4444":"#fbbf24";
+  if (!silent) calc();
+}
+
+// ── BANNER ───────────────────────────────────────────────────
+function updateBanner() {
+  const t = tok();
+  const p = prices[t.id];
+  const en= parseFloat(document.getElementById("entry").value);
+  document.getElementById("banner-label").textContent = t.id+"USDT · BINANCE";
+  document.getElementById("banner-price").textContent = p ? "$"+fmt(p) : (ws&&ws.readyState===1?"Chờ tick...":"Đang kết nối...");
+  document.getElementById("banner-price").style.color = p?t.color:"#334155";
+  document.getElementById("banner").style.border     = `1px solid ${p?t.color+"44":"#1e293b"}`;
+  document.getElementById("banner").style.background = p?t.color+"11":"#0a0f1e";
+  document.getElementById("ehint").textContent = p?`Live: $${fmt(p)}`:"Nhập giá vào lệnh";
+  const ub=document.getElementById("use-btn");
+  ub.style.display=p?"inline-block":"none";
+  if(p){ub.style.background=t.color+"22";ub.style.color=t.color;ub.style.border=`1px solid ${t.color}55`;}
+  const dd=document.getElementById("banner-diff");
+  if(p&&!isNaN(en)&&en>0){
+    const d=((p-en)/en)*100;
+    dd.textContent="vs Entry "+(d>0?"+":"")+d.toFixed(2)+"%";
+    dd.style.color=d>0?"#22c55e":"#ef4444";
+  } else dd.textContent="";
+}
+
+function usePrice(){
+  const p=prices[activeTab]; if(!p) return;
+  document.getElementById("entry").value=p; calc(); updateBanner();
+}
+
+// ── GAUGE ────────────────────────────────────────────────────
+function drawGauge(value) {
+  const r=54,cx=70,cy=70;
+  const rad=d=>d*Math.PI/180;
+  const pt =d=>({x:cx+r*Math.cos(rad(d-90)),y:cy+r*Math.sin(rad(d-90))});
+  const s=pt(-140),e=pt(140);
+  document.getElementById("g-bg").setAttribute("d",`M${s.x} ${s.y}A${r} ${r} 0 1 1 ${e.x} ${e.y}`);
+  const isN=!isNaN(value);
+  const cl=Math.max(-30,Math.min(30,isN?value:0));
+  const ratio=(cl+30)/60;
+  const angle=-140+ratio*280;
+  const col=!isN?"#334155":value<0?"#ef4444":value<3?"#f59e0b":"#22c55e";
+  if(isN){
+    const f=pt(-140+ratio*280);
+    document.getElementById("g-fill").setAttribute("d",`M${s.x} ${s.y}A${r} ${r} 0 ${ratio*280>180?1:0} 1 ${f.x} ${f.y}`);
+    document.getElementById("g-fill").setAttribute("stroke",col);
+    document.getElementById("g-fill").style.filter=`drop-shadow(0 0 6px ${col})`;
+  } else document.getElementById("g-fill").setAttribute("d","");
+  const nx=cx+38*Math.cos(rad(angle-90)), ny=cy+38*Math.sin(rad(angle-90));
+  const nd=document.getElementById("g-needle");
+  nd.setAttribute("x2",nx);nd.setAttribute("y2",ny);nd.setAttribute("stroke",col);
+  nd.style.filter=`drop-shadow(0 0 4px ${col})`;
+  document.getElementById("g-dot").setAttribute("fill",col);
+}
+
+// ── CALC ─────────────────────────────────────────────────────
+function calc() {
+  const en=parseFloat(document.getElementById("entry").value);
+  const tp=parseFloat(document.getElementById("tp").value);
+  const sl=parseFloat(document.getElementById("sl").value);
+  const wr=(parseFloat(document.getElementById("wr").value)||60)/100;
+  const ca=parseFloat(document.getElementById("cap").value)||1000;
+  const lv=parseInt(document.getElementById("lev").value)||10;
+
+  const tpP=(en>0&&!isNaN(tp))?((tp-en)/en)*100:NaN;
+  const slP=(en>0&&!isNaN(sl))?Math.abs((sl-en)/en)*100:NaN;
+  const rr =slP>0?tpP/slP:NaN;
+  const ev =(!isNaN(tpP)&&!isNaN(slP))?wr*tpP-(1-wr)*slP:NaN;
+
+  const kf=(!isNaN(rr)&&rr>0)?(wr*rr-(1-wr))/rr:NaN;
+  const kq=!isNaN(kf)?Math.max(kf,0)*0.25:NaN;
+  const ps=!isNaN(kq)?ca*kq:NaN;
+  const pl=!isNaN(ps)?ps*lv:NaN;
+  const pp=(!isNaN(ps)&&!isNaN(tpP))?ps*(tpP/100):NaN;
+  const pm=(!isNaN(ps)&&!isNaN(slP))?ps*(slP/100):NaN;
+
+  document.getElementById("r-tp").textContent=isNaN(tpP)?"—":fPct(tpP);
+  document.getElementById("r-tp").style.color=(!isNaN(tpP)&&tpP>0)?"#22c55e":"#ef4444";
+  document.getElementById("r-sl").textContent=isNaN(slP)?"—":"-"+slP.toFixed(2)+"%";
+  const rEl=document.getElementById("r-rr");
+  rEl.textContent=isNaN(rr)?"—":"1:"+rr.toFixed(2);
+  rEl.style.color=!isNaN(rr)?(rr>=1.5?"#22c55e":rr>=1?"#f59e0b":"#ef4444"):"#475569";
+
+  drawGauge(ev);
+  const evEl=document.getElementById("ev-num");
+  evEl.textContent=isNaN(ev)?"—":fPct(ev);
+  evEl.style.color=isNaN(ev)?"#334155":ev>0?"#22c55e":"#ef4444";
+  evEl.style.textShadow=isNaN(ev)?"none":ev>0?"0 0 24px #22c55e44":"0 0 24px #ef444444";
+
+  const vd=isNaN(ev)?null:VERDICTS.find(v=>ev>=v.thr);
+  const box=document.getElementById("ev-box");
+  box.style.background=vd?vd.col+"09":"#0f172a";
+  box.style.border=`1px solid ${vd?vd.col+"33":"#1e293b"}`;
+  document.getElementById("v-label").textContent=vd?vd.label:"";
+  document.getElementById("v-label").style.color=vd?vd.col:"";
+  document.getElementById("v-sub").textContent=vd?vd.sub:"";
+
+  document.getElementById("k-f").textContent=(isNaN(kf)||kf<=0)?"N/A":(kf*100).toFixed(1)+"%";
+  document.getElementById("k-q").textContent=(isNaN(kq)||kq<=0)?"N/A":(kq*100).toFixed(1)+"%";
+  document.getElementById("k-p").textContent=(isNaN(ps)||ps<=0)?"N/A":fUSD(ps);
+  document.getElementById("k-l").textContent=(isNaN(pl)||pl<=0)?"N/A":fUSD(pl);
+  document.getElementById("k-pp").textContent="+"+((!isNaN(pp)&&pp>0)?fUSD(pp):"—");
+  document.getElementById("k-pm").textContent="-"+((!isNaN(pm)&&pm>0)?fUSD(pm):"—");
+  updateBanner();
+}
+
+// ── GUIDE ────────────────────────────────────────────────────
+function toggleGuide(){
+  guideOpen=!guideOpen;
+  document.getElementById("gbody").style.display=guideOpen?"block":"none";
+  document.getElementById("garrow").style.transform=guideOpen?"rotate(90deg)":"none";
+  document.getElementById("gbtn").style.borderRadius=guideOpen?"10px 10px 0 0":"10px";
+}
+
+// ── WEBSOCKET ────────────────────────────────────────────────
+function setStatus(s){
+  const dot=document.getElementById("dot"), txt=document.getElementById("stxt");
+  if(s==="open"){
+    dot.style.background="#22c55e";dot.style.boxShadow="0 0 8px #22c55e";
+    txt.style.color="#475569";txt.textContent="✓ WebSocket Live · Binance";
+  } else if(s==="connecting"){
+    dot.style.background="#f59e0b";dot.style.boxShadow="0 0 8px #f59e0b";
+    txt.style.color="#475569";txt.textContent="⟳ Đang kết nối...";
+  } else {
+    dot.style.background="#ef4444";dot.style.boxShadow="0 0 8px #ef4444";
+    txt.style.color="#475569";txt.textContent="✗ Mất kết nối — đang thử lại...";
+  }
+}
+
+function connectWS(){
+  setStatus("connecting");
+  const streams=TOKENS.map(t=>t.stream+"@miniTicker").join("/");
+  try{ ws=new WebSocket("wss://stream.binance.com:9443/stream?streams="+streams); }
+  catch{ scheduleReconnect(); return; }
+  ws.onopen =()=>{ setStatus("open"); clearTimeout(wsTimer); };
+  ws.onerror=()=>{};
+  ws.onclose=()=>{ setStatus("closed"); scheduleReconnect(); };
+  ws.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data).data;
+      if(!d||!d.s) return;
+      const t=TOKENS.find(x=>x.pair===d.s);
+      if(!t) return;
+      const p=parseFloat(d.c); if(isNaN(p)) return;
+      prices[t.id]=p;
+      const tp=document.getElementById("tp-"+t.id);
+      if(tp) tp.textContent="$"+fmt(p);
+      if(t.id===activeTab){ updateBanner(); calc(); }
+      document.getElementById("stxt").textContent="✓ Live · "+new Date().toLocaleTimeString("vi-VN");
+    }catch{}
+  };
+}
+function scheduleReconnect(){ clearTimeout(wsTimer); wsTimer=setTimeout(connectWS,5000); }
+function reconnectWS(){ clearTimeout(wsTimer); try{ws&&ws.close();}catch{} connectWS(); }
+
+// ── INIT ─────────────────────────────────────────────────────
+buildTabs();
+buildLevBtns();
+loadForm();
+drawGauge(NaN);
+connectWS();
+</script>
+</body>
+</html>
